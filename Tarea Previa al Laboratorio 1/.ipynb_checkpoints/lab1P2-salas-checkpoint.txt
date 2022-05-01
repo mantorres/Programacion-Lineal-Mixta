@@ -1,0 +1,62 @@
+#!/bin/julia
+using JuMP, Gurobi, Printf, DelimitedFiles, Combinatorics, LinearAlgebra;
+#usaremos el supuesto de que los vertices estan ennumerados de 1 en adelante
+#y que no se salta ningun vertice (es decir, si hay 7 vertices, los vertices
+#son numerados como 1,2,3,4,5,6,7)
+function funcMSTCrte(W)
+  mdl = Model(with_optimizer(Gurobi.Optimizer,Presolve=0))
+  aris=size(W,1); #numero de aristas
+  ver=max(maximum(W[:,1]),maximum(W[:,2])); #numero de vertices del grafo en W
+  ady=zeros(ver,ver);
+  for e in 1:aris
+    ady[W[e,1],W[e,2]]=W[e,3];
+    ady[W[e,2],W[e,1]]=W[e,3];
+  end#se crea una matriz de adyacencia
+  x=@variable(mdl, x[r in 1:ver, k in 1:ver], Bin);
+
+  @constraint(mdl, sum(x)/2 == ver - 1 )
+  #esto es la condicion necesaria para ser arbol
+
+  for S in powerset(1:ver)
+    if (length(S) > 0) && (length(S)<ver)
+      @constraint(mdl, sum(x[r,c] for r in setdiff(1:ver,S), c in S ) >= 1 );
+    end
+  end
+  #esto equivale a la condicion de corte
+
+  for i in 1:ver, j in 1:ver
+    if ady[i,j]==0
+      @constraint(mdl, x[i,j]==0)
+    end
+  end#esto asegura que no se entreguen minimos menores, pues podria
+  #haber un 1 en x donde hay un 0 en ady y podria entregar una solucion menor
+  #pero en un grafo no conexo
+
+  for i in 1:ver, j in 1:ver
+    if ady[i,j]!=0
+      @constraint(mdl, x[i,j]==x[j,i])
+    end
+  end #esto asegura simetria, pues no tendria sentido que se activara
+  #una arista en un sentido y en el otro no
+
+  @objective(mdl, Min, sum(x[r,c]*ady[r,c]/2 for r in 1:ver, c in 1:ver))
+  optimize!(mdl)
+  return(mdl);
+end
+tmpFrm=[]; tmpRes=[]; nV=[]; nE=[]; val=[]; name=[];
+for fn in readdir()
+  if occursin(r"lab1P1-i",fn)
+    W=readdlm(fn, ',', Int, '\n')
+    append!( name, [fn] );
+    append!( tmpFrm, @elapsed mstP2=funcMSTCrte(W) );
+    append!( tmpRes, @elapsed optimize!(mstP2) );
+    append!( nV, length(union(W[:,1],W[:,2])));
+    append!( nE, size(W,1) );
+    append!( val, objective_value(mstP2) );
+end
+end
+println()
+for i in 1:length(tmpFrm)
+  @printf("out %20s %5d %5d %6.3f %6.3f %7.3f\n",
+  name[i], nV[i], nE[i], tmpFrm[i], tmpRes[i], val[i] )
+end
